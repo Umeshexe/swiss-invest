@@ -1,5 +1,5 @@
 name: orion
-description: "A new Flutter project."
+description: "Orion — Health Data Sync connector app. Reads native health, location, camera and microphone data with explicit user consent and securely syncs it to the SwissInvest backend via HTTPS with incremental, auto (24h) and manual sync modes."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -31,9 +31,15 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # The following adds the Cupertino Icons font to your application.
-  # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+  flutter_secure_storage: ^9.2.4
+  geolocator: ^13.0.4
+  health: ^13.3.1
+  http: ^1.5.0
+  intl: ^0.20.2
+  permission_handler: ^11.4.0
+  shared_preferences: ^2.5.3
+  workmanager: ^0.7.0
 
 dev_dependencies:
   flutter_test:

@@ -26,6 +26,20 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Camera access is available for user-triggered upload or scan actions.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Health access is needed to read approved metrics such as steps, heart rate, calories, sleep, and weight for secure sync.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>The app uses HealthKit integration for connector features and permission-managed sync workflows.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Location is used to attach current GEO context when the user approves it.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Microphone access is only for user-triggered voice features and is never used in background sync.</string>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>orion.periodic-health-sync</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -49,6 +63,10 @@
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>processing</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
