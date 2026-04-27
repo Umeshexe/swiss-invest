@@ -3,6 +3,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../controllers/app_controller.dart';
 import '../models/permission_snapshot.dart';
+import 'about_app_sheet.dart';
 
 class SettingsSheet extends StatelessWidget {
   const SettingsSheet({super.key, required this.controller});
@@ -61,6 +62,21 @@ class SettingsSheet extends StatelessWidget {
                   onPressed: openAppSettings,
                   icon: const Icon(Icons.settings_applications),
                   label: const Text('Open System Settings'),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    showModalBottomSheet<void>(
+                      context: context,
+                      isScrollControlled: true,
+                      builder: (context) => const FractionallySizedBox(
+                        heightFactor: 0.92,
+                        child: AboutAppSheet(),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.info_outline),
+                  label: const Text('About App'),
                 ),
                 const SizedBox(height: 10),
                 FilledButton.tonalIcon(

@@ -61,7 +61,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       builder: (context, _) {
         return Scaffold(
           appBar: AppBar(
-            title: const Text('Health Sync Dashboard'),
+            backgroundColor: const Color(0xFFE2F0E8),
+            foregroundColor: const Color(0xFF0B5D52),
+            title: const Text(
+              'Health Sync Dashboard',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
             actions: [
               IconButton(
                 tooltip: 'Settings',
