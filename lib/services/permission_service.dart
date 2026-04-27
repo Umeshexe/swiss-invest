@@ -31,9 +31,13 @@ class PermissionService {
     if (Platform.isAndroid) {
       await Permission.activityRecognition.request();
     }
+    final healthTypes = _healthTypesForCurrentPlatform;
     final granted = await _health.requestAuthorization(
-      _healthTypes,
-      permissions: _healthAccess,
+      healthTypes,
+      permissions: List<HealthDataAccess>.filled(
+        healthTypes.length,
+        HealthDataAccess.READ,
+      ),
     );
     return granted ? PermissionState.granted : PermissionState.denied;
   }
@@ -55,9 +59,13 @@ class PermissionService {
   ) async {
     try {
       await _health.configure();
+      final healthTypes = _healthTypesForCurrentPlatform;
       final granted = await _health.hasPermissions(
-        _healthTypes,
-        permissions: _healthAccess,
+        healthTypes,
+        permissions: List<HealthDataAccess>.filled(
+          healthTypes.length,
+          HealthDataAccess.READ,
+        ),
       );
       return granted == true ? PermissionState.granted : fallback;
     } catch (_) {
@@ -78,7 +86,10 @@ class PermissionService {
     return PermissionState.unavailable;
   }
 
-  static const List<HealthDataType> _healthTypes = <HealthDataType>[
+  List<HealthDataType> get _healthTypesForCurrentPlatform =>
+      Platform.isAndroid ? _androidHealthTypes : _sharedHealthTypes;
+
+  static const List<HealthDataType> _sharedHealthTypes = <HealthDataType>[
     HealthDataType.STEPS,
     HealthDataType.HEART_RATE,
     HealthDataType.ACTIVE_ENERGY_BURNED,
@@ -86,11 +97,20 @@ class PermissionService {
     HealthDataType.WEIGHT,
   ];
 
-  static const List<HealthDataAccess> _healthAccess = <HealthDataAccess>[
-    HealthDataAccess.READ,
-    HealthDataAccess.READ,
-    HealthDataAccess.READ,
-    HealthDataAccess.READ,
-    HealthDataAccess.READ,
+  static const List<HealthDataType> _androidHealthTypes = <HealthDataType>[
+    HealthDataType.STEPS,
+    HealthDataType.HEART_RATE,
+    HealthDataType.ACTIVE_ENERGY_BURNED,
+    HealthDataType.TOTAL_CALORIES_BURNED,
+    HealthDataType.SLEEP_SESSION,
+    HealthDataType.SLEEP_ASLEEP,
+    HealthDataType.SLEEP_AWAKE,
+    HealthDataType.SLEEP_AWAKE_IN_BED,
+    HealthDataType.SLEEP_DEEP,
+    HealthDataType.SLEEP_LIGHT,
+    HealthDataType.SLEEP_OUT_OF_BED,
+    HealthDataType.SLEEP_REM,
+    HealthDataType.SLEEP_UNKNOWN,
+    HealthDataType.WEIGHT,
   ];
 }

@@ -10,6 +10,8 @@ class StorageService {
   static const _sessionKey = 'session';
   static const _permissionStateKey = 'permission_snapshot';
   static const _lastSyncKey = 'last_sync_at';
+  static const _lastHealthSyncKey = 'last_health_sync_at';
+  static const _lastLocationSyncKey = 'last_location_sync_at';
   static const _permissionSetupKey = 'permission_setup_complete';
   static const _storage = FlutterSecureStorage();
 
@@ -65,6 +67,42 @@ class StorageService {
     return DateTime.tryParse(raw)?.toUtc();
   }
 
+  Future<void> writeLastHealthSyncAt(DateTime timestamp) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _lastHealthSyncKey,
+      timestamp.toUtc().toIso8601String(),
+    );
+  }
+
+  Future<DateTime?> readLastHealthSyncAt() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_lastHealthSyncKey);
+    if (raw == null || raw.isEmpty) {
+      return null;
+    }
+
+    return DateTime.tryParse(raw)?.toUtc();
+  }
+
+  Future<void> writeLastLocationSyncAt(DateTime timestamp) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _lastLocationSyncKey,
+      timestamp.toUtc().toIso8601String(),
+    );
+  }
+
+  Future<DateTime?> readLastLocationSyncAt() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_lastLocationSyncKey);
+    if (raw == null || raw.isEmpty) {
+      return null;
+    }
+
+    return DateTime.tryParse(raw)?.toUtc();
+  }
+
   Future<void> writePermissionSetupComplete(bool complete) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_permissionSetupKey, complete);
@@ -80,6 +118,8 @@ class StorageService {
     await _storage.deleteAll();
     await prefs.remove(_permissionStateKey);
     await prefs.remove(_lastSyncKey);
+    await prefs.remove(_lastHealthSyncKey);
+    await prefs.remove(_lastLocationSyncKey);
     await prefs.remove(_permissionSetupKey);
   }
 }

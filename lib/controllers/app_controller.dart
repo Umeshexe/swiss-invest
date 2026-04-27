@@ -199,7 +199,12 @@ class AppController extends ChangeNotifier {
 
     final payload = await _deviceDataService.collectSyncPayload(
       permissions: snapshot,
-      from: await _storageService.readLastSyncAt(),
+      healthFrom: snapshot.health == PermissionState.granted
+          ? await _storageService.readLastHealthSyncAt()
+          : null,
+      locationFrom: snapshot.location == PermissionState.granted
+          ? await _storageService.readLastLocationSyncAt()
+          : null,
       to: DateTime.now().toUtc(),
     );
 

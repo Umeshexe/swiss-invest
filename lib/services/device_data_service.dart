@@ -13,10 +13,14 @@ class DeviceDataService {
 
   Future<SyncPayload> collectSyncPayload({
     required PermissionSnapshot permissions,
-    required DateTime? from,
+    required DateTime? healthFrom,
+    required DateTime? locationFrom,
     required DateTime to,
   }) async {
-    final syncStart = (from ?? to.subtract(const Duration(days: 7))).toUtc();
+    final healthSyncStart = (healthFrom ?? to.subtract(const Duration(days: 7)))
+        .toUtc();
+    final locationSyncStart =
+        (locationFrom ?? to.subtract(const Duration(days: 1))).toUtc();
     final syncEnd = to.toUtc();
 
     final steps = <Map<String, dynamic>>[];
@@ -29,9 +33,9 @@ class DeviceDataService {
     if (permissions.health == PermissionState.granted) {
       await _health.configure();
       final healthData = await _health.getHealthDataFromTypes(
-        startTime: syncStart,
+        startTime: healthSyncStart,
         endTime: syncEnd,
-        types: _trackedHealthTypes,
+        types: _trackedHealthTypesForPlatform,
       );
 
       for (final record in healthData) {
@@ -42,8 +46,17 @@ class DeviceDataService {
           case HealthDataType.HEART_RATE:
             heartRate.add(normalized);
           case HealthDataType.ACTIVE_ENERGY_BURNED:
+          case HealthDataType.TOTAL_CALORIES_BURNED:
             calories.add(normalized);
           case HealthDataType.SLEEP_SESSION:
+          case HealthDataType.SLEEP_ASLEEP:
+          case HealthDataType.SLEEP_AWAKE:
+          case HealthDataType.SLEEP_AWAKE_IN_BED:
+          case HealthDataType.SLEEP_DEEP:
+          case HealthDataType.SLEEP_LIGHT:
+          case HealthDataType.SLEEP_OUT_OF_BED:
+          case HealthDataType.SLEEP_REM:
+          case HealthDataType.SLEEP_UNKNOWN:
             sleep.add(normalized);
           case HealthDataType.WEIGHT:
             weight.add(normalized);
@@ -51,10 +64,29 @@ class DeviceDataService {
             break;
         }
       }
+
+      if (Platform.isAndroid && steps.isEmpty) {
+        final totalSteps = await _health.getTotalStepsInInterval(
+          healthSyncStart,
+          syncEnd,
+        );
+        if (totalSteps != null && totalSteps > 0) {
+          steps.add(<String, dynamic>{
+            'value': totalSteps.toString(),
+            'unit': HealthDataUnit.COUNT.name,
+            'source_name': 'health_connect_aggregate',
+            'source_id': 'health_connect_aggregate',
+            'platform': Platform.operatingSystem,
+            'type': HealthDataType.STEPS.name,
+            'start_time': healthSyncStart.toIso8601String(),
+            'end_time': syncEnd.toIso8601String(),
+          });
+        }
+      }
     }
 
     if (permissions.location == PermissionState.granted) {
-      final location = await _readLocation();
+      final location = await _readLocation(locationSyncStart);
       if (location != null) {
         locations.add(location);
       }
@@ -70,7 +102,9 @@ class DeviceDataService {
     );
   }
 
-  Future<Map<String, dynamic>?> _readLocation() async {
+  Future<Map<String, dynamic>?> _readLocation(
+    DateTime locationSyncStart,
+  ) async {
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       return null;
@@ -89,6 +123,7 @@ class DeviceDataService {
       'altitude': position.altitude,
       'speed': position.speed,
       'timestamp': position.timestamp.toUtc().toIso8601String(),
+      'window_start': locationSyncStart.toIso8601String(),
       'platform': Platform.operatingSystem,
     };
   }
@@ -106,11 +141,34 @@ class DeviceDataService {
     };
   }
 
-  static const List<HealthDataType> _trackedHealthTypes = <HealthDataType>[
-    HealthDataType.STEPS,
-    HealthDataType.HEART_RATE,
-    HealthDataType.ACTIVE_ENERGY_BURNED,
-    HealthDataType.SLEEP_SESSION,
-    HealthDataType.WEIGHT,
-  ];
+  List<HealthDataType> get _trackedHealthTypesForPlatform => Platform.isAndroid
+      ? _androidTrackedHealthTypes
+      : _sharedTrackedHealthTypes;
+
+  static const List<HealthDataType> _sharedTrackedHealthTypes =
+      <HealthDataType>[
+        HealthDataType.STEPS,
+        HealthDataType.HEART_RATE,
+        HealthDataType.ACTIVE_ENERGY_BURNED,
+        HealthDataType.SLEEP_SESSION,
+        HealthDataType.WEIGHT,
+      ];
+
+  static const List<HealthDataType> _androidTrackedHealthTypes =
+      <HealthDataType>[
+        HealthDataType.STEPS,
+        HealthDataType.HEART_RATE,
+        HealthDataType.ACTIVE_ENERGY_BURNED,
+        HealthDataType.TOTAL_CALORIES_BURNED,
+        HealthDataType.SLEEP_SESSION,
+        HealthDataType.SLEEP_ASLEEP,
+        HealthDataType.SLEEP_AWAKE,
+        HealthDataType.SLEEP_AWAKE_IN_BED,
+        HealthDataType.SLEEP_DEEP,
+        HealthDataType.SLEEP_LIGHT,
+        HealthDataType.SLEEP_OUT_OF_BED,
+        HealthDataType.SLEEP_REM,
+        HealthDataType.SLEEP_UNKNOWN,
+        HealthDataType.WEIGHT,
+      ];
 }

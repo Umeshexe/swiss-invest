@@ -25,12 +25,18 @@ class SyncService {
     required PermissionSnapshot permissions,
     String source = 'manual',
   }) async {
-    final lastSyncAt = await _storageService.readLastSyncAt();
+    final lastHealthSyncAt = await _storageService.readLastHealthSyncAt();
+    final lastLocationSyncAt = await _storageService.readLastLocationSyncAt();
     final now = DateTime.now().toUtc();
 
     final payload = await _deviceDataService.collectSyncPayload(
       permissions: permissions,
-      from: lastSyncAt,
+      healthFrom: permissions.health == PermissionState.granted
+          ? lastHealthSyncAt
+          : null,
+      locationFrom: permissions.location == PermissionState.granted
+          ? lastLocationSyncAt
+          : null,
       to: now,
     );
 
@@ -48,12 +54,22 @@ class SyncService {
     await _submitWithRetry(session: session, payload: payload.toApiPayload());
 
     await _storageService.writeLastSyncAt(now);
+    if (payload.steps.isNotEmpty ||
+        payload.heartRate.isNotEmpty ||
+        payload.calories.isNotEmpty ||
+        payload.sleep.isNotEmpty ||
+        payload.weight.isNotEmpty) {
+      await _storageService.writeLastHealthSyncAt(now);
+    }
+    if (payload.locations.isNotEmpty) {
+      await _storageService.writeLastLocationSyncAt(now);
+    }
 
     return SyncResult(
       success: true,
       syncedAt: now,
       message:
-          'Sync complete. Uploaded ${payload.totalRecordCount} new records via $source sync.',
+          'Sync complete. Uploaded ${payload.totalRecordCount} new records via $source sync (${payload.summary}).',
       recordCount: payload.totalRecordCount,
     );
   }

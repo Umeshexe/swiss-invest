@@ -25,6 +25,14 @@ class SyncPayload {
 
   bool get isEmpty => totalRecordCount == 0;
 
+  String get summary =>
+      'steps: ${steps.length}, '
+      'heart_rate: ${heartRate.length}, '
+      'calories: ${calories.length}, '
+      'sleep: ${sleep.length}, '
+      'weight: ${weight.length}, '
+      'location: ${locations.length}';
+
   Map<String, dynamic> toApiPayload() => <String, dynamic>{
     'steps': steps,
     'heart_rate': heartRate,
