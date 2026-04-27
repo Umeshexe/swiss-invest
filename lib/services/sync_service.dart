@@ -25,18 +25,14 @@ class SyncService {
     required PermissionSnapshot permissions,
     String source = 'manual',
   }) async {
+    final now = DateTime.now().toUtc();
     final lastHealthSyncAt = await _storageService.readLastHealthSyncAt();
     final lastLocationSyncAt = await _storageService.readLastLocationSyncAt();
-    final now = DateTime.now().toUtc();
 
     final payload = await _deviceDataService.collectSyncPayload(
       permissions: permissions,
-      healthFrom: permissions.health == PermissionState.granted
-          ? lastHealthSyncAt
-          : null,
-      locationFrom: permissions.location == PermissionState.granted
-          ? lastLocationSyncAt
-          : null,
+      healthFrom: lastHealthSyncAt,       // null → DeviceDataService uses 7-day floor
+      locationFrom: lastLocationSyncAt,   // null → DeviceDataService uses 1-day floor
       to: now,
     );
 

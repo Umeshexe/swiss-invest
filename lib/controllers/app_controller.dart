@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../models/auth_session.dart';
+import '../models/device_health_snapshot.dart';
 import '../models/permission_snapshot.dart';
 import '../models/sync_result.dart';
 import '../services/api_service.dart';
@@ -37,6 +38,14 @@ class AppController extends ChangeNotifier {
 
   AuthSession? session;
   PermissionSnapshot permissionSnapshot = PermissionSnapshot.empty();
+  DeviceHealthSnapshot deviceHealthSnapshot = const DeviceHealthSnapshot(
+    steps: null,
+    calories: null,
+    sleepDuration: null,
+    heartRate: null,
+    weight: null,
+    hasAnyData: false,
+  );
   DateTime? lastSyncAt;
   String? lastSyncMessage;
   bool isBusy = false;
@@ -55,6 +64,7 @@ class AppController extends ChangeNotifier {
 
     if (session != null) {
       await BackgroundSyncService.schedulePeriodicSync();
+      await refreshDeviceHealthSnapshot();
     }
   }
 
@@ -67,6 +77,7 @@ class AppController extends ChangeNotifier {
       session = await _apiService.login(email: email, password: password);
       await _storageService.writeSession(session!);
       await BackgroundSyncService.schedulePeriodicSync();
+      await refreshDeviceHealthSnapshot();
       return true;
     } catch (error) {
       lastSyncMessage = error.toString().replaceFirst('Exception: ', '');
@@ -89,6 +100,14 @@ class AppController extends ChangeNotifier {
     lastSyncAt = null;
     lastSyncMessage = null;
     hasCompletedPermissionSetup = false;
+    deviceHealthSnapshot = const DeviceHealthSnapshot(
+      steps: null,
+      calories: null,
+      sleepDuration: null,
+      heartRate: null,
+      weight: null,
+      hasAnyData: false,
+    );
     isBusy = false;
     notifyListeners();
   }
@@ -98,6 +117,7 @@ class AppController extends ChangeNotifier {
       existing: permissionSnapshot,
     );
     await _storageService.writePermissionSnapshot(permissionSnapshot);
+    await refreshDeviceHealthSnapshot(notify: false);
     notifyListeners();
   }
 
@@ -158,6 +178,7 @@ class AppController extends ChangeNotifier {
       }
 
       lastSyncMessage = result.message;
+      await refreshDeviceHealthSnapshot(notify: false);
       notifyListeners();
       return result;
     } catch (error) {
@@ -211,5 +232,14 @@ class AppController extends ChangeNotifier {
     _cachedPendingRecords = payload.totalRecordCount;
     _pendingEstimateAt = DateTime.now();
     return payload.totalRecordCount;
+  }
+
+  Future<void> refreshDeviceHealthSnapshot({bool notify = true}) async {
+    deviceHealthSnapshot = await _deviceDataService.collectDeviceHealthSnapshot(
+      permissions: permissionSnapshot,
+    );
+    if (notify) {
+      notifyListeners();
+    }
   }
 }

@@ -46,6 +46,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _pendingRecords = count;
         });
       }
+      await widget.controller.refreshDeviceHealthSnapshot();
     } finally {
       _isLoadingPending = false;
     }
@@ -140,6 +141,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Device Health Snapshot',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 12),
+                  _HealthSnapshotPanel(controller: controller),
                   const SizedBox(height: 24),
                   Text(
                     'Manual Sync',
@@ -287,6 +295,104 @@ class _SummaryCard extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _HealthSnapshotPanel extends StatelessWidget {
+  const _HealthSnapshotPanel({required this.controller});
+
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final snapshot = controller.deviceHealthSnapshot;
+
+    if (!snapshot.hasAnyData) {
+      return Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: const Color(0xFFD8E0D6)),
+        ),
+        child: const Text(
+          'No health values are visible yet from the current native source. If the device has data, check that it is available through Health Connect on Android or Apple Health on iPhone, then refresh.',
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _MetricCard(
+                title: 'Steps Today',
+                value: snapshot.steps?.toString() ?? '--',
+                icon: Icons.directions_walk,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _MetricCard(
+                title: 'Calories',
+                value: snapshot.calories == null
+                    ? '--'
+                    : '${snapshot.calories!.round()} kcal',
+                icon: Icons.local_fire_department,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _MetricCard(
+                title: 'Sleep',
+                value: _formatSleep(snapshot.sleepDuration),
+                icon: Icons.bedtime,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _MetricCard(
+                title: 'Heart Rate',
+                value: snapshot.heartRate == null
+                    ? '--'
+                    : '${snapshot.heartRate!.round()} bpm',
+                icon: Icons.favorite_border,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _MetricCard(
+                title: 'Weight',
+                value: snapshot.weight == null
+                    ? '--'
+                    : '${snapshot.weight!.toStringAsFixed(1)} kg',
+                icon: Icons.monitor_weight_outlined,
+              ),
+            ),
+            const Expanded(child: SizedBox()),
+          ],
+        ),
+      ],
+    );
+  }
+
+  String _formatSleep(Duration? duration) {
+    if (duration == null) {
+      return '--';
+    }
+
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    return '${hours}h ${minutes}m';
   }
 }
 
