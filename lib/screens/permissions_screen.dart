@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../controllers/app_controller.dart';
 import '../models/permission_snapshot.dart';
@@ -28,6 +29,50 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
     super.dispose();
   }
 
+  Future<void> _requestPermission(
+    String title,
+    Future<PermissionState> Function() request,
+  ) async {
+    final state = await request();
+    if (!mounted) {
+      return;
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
+    switch (state) {
+      case PermissionState.granted:
+        messenger.showSnackBar(
+          SnackBar(content: Text('$title permission granted.')),
+        );
+      case PermissionState.permanentlyDenied:
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              '$title permission is blocked. Open system settings to enable it.',
+            ),
+            action: SnackBarAction(
+              label: 'Settings',
+              onPressed: openAppSettings,
+            ),
+          ),
+        );
+      case PermissionState.denied:
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              '$title permission was not granted. You can try again or enable it in Settings.',
+            ),
+          ),
+        );
+      case PermissionState.unavailable:
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('$title permission is unavailable on this device.'),
+          ),
+        );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
@@ -41,7 +86,10 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
         state: controller.permissionSnapshot.health,
         icon: Icons.favorite,
         accentColor: const Color(0xFFE15A64),
-        onRequest: controller.requestHealthPermission,
+        onRequest: () => _requestPermission(
+          'Health Data',
+          controller.requestHealthPermission,
+        ),
       ),
       _PermissionStep(
         title: 'Location',
@@ -51,7 +99,10 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
         state: controller.permissionSnapshot.location,
         icon: Icons.location_on,
         accentColor: const Color(0xFF2B83C6),
-        onRequest: controller.requestLocationPermission,
+        onRequest: () => _requestPermission(
+          'Location',
+          controller.requestLocationPermission,
+        ),
       ),
       _PermissionStep(
         title: 'Camera',
@@ -61,7 +112,8 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
         state: controller.permissionSnapshot.camera,
         icon: Icons.photo_camera,
         accentColor: const Color(0xFF8B61C9),
-        onRequest: controller.requestCameraPermission,
+        onRequest: () =>
+            _requestPermission('Camera', controller.requestCameraPermission),
       ),
       _PermissionStep(
         title: 'Microphone',
@@ -71,7 +123,10 @@ class _PermissionsScreenState extends State<PermissionsScreen> {
         state: controller.permissionSnapshot.microphone,
         icon: Icons.mic,
         accentColor: const Color(0xFFD88748),
-        onRequest: controller.requestMicrophonePermission,
+        onRequest: () => _requestPermission(
+          'Microphone',
+          controller.requestMicrophonePermission,
+        ),
       ),
     ];
 

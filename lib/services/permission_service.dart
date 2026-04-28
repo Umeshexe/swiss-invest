@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:health/health.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -32,26 +33,39 @@ class PermissionService {
       await Permission.activityRecognition.request();
     }
     final healthTypes = _healthTypesForCurrentPlatform;
-    final granted = await _health.requestAuthorization(
-      healthTypes,
-      permissions: List<HealthDataAccess>.filled(
-        healthTypes.length,
-        HealthDataAccess.READ,
-      ),
-    );
-    return granted ? PermissionState.granted : PermissionState.denied;
+    debugPrint('[PERMISSIONS] Requesting health for platform=${Platform.operatingSystem}  types=${healthTypes.map((t) => t.name).join(", ")}');
+    try {
+      final granted = await _health.requestAuthorization(
+        healthTypes,
+        permissions: List<HealthDataAccess>.filled(
+          healthTypes.length,
+          HealthDataAccess.READ,
+        ),
+      );
+      debugPrint('[PERMISSIONS] Health result: ${granted ? "granted" : "denied"}');
+      return granted ? PermissionState.granted : PermissionState.denied;
+    } catch (e) {
+      debugPrint('[PERMISSIONS] Health request error: $e');
+      return PermissionState.denied;
+    }
   }
 
   Future<void> requestLocationPermission() async {
-    await Permission.locationWhenInUse.request();
+    debugPrint('[PERMISSIONS] Requesting location...');
+    final status = await Permission.locationWhenInUse.request();
+    debugPrint('[PERMISSIONS] Location result: ${status.name}');
   }
 
   Future<void> requestCameraPermission() async {
-    await Permission.camera.request();
+    debugPrint('[PERMISSIONS] Requesting camera...');
+    final status = await Permission.camera.request();
+    debugPrint('[PERMISSIONS] Camera result: ${status.name}');
   }
 
   Future<void> requestMicrophonePermission() async {
-    await Permission.microphone.request();
+    debugPrint('[PERMISSIONS] Requesting microphone...');
+    final status = await Permission.microphone.request();
+    debugPrint('[PERMISSIONS] Microphone result: ${status.name}');
   }
 
   Future<PermissionState> _readHealthPermission(
@@ -89,11 +103,12 @@ class PermissionService {
   List<HealthDataType> get _healthTypesForCurrentPlatform =>
       Platform.isAndroid ? _androidHealthTypes : _sharedHealthTypes;
 
+  // iOS uses SLEEP_IN_BED — SLEEP_SESSION is Android/Health Connect only.
   static const List<HealthDataType> _sharedHealthTypes = <HealthDataType>[
     HealthDataType.STEPS,
     HealthDataType.HEART_RATE,
     HealthDataType.ACTIVE_ENERGY_BURNED,
-    HealthDataType.SLEEP_SESSION,
+    HealthDataType.SLEEP_IN_BED,
     HealthDataType.WEIGHT,
   ];
 

@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import '../models/auth_session.dart';
 import '../models/permission_snapshot.dart';
 import '../models/sync_result.dart';
@@ -25,18 +27,38 @@ class SyncService {
     required PermissionSnapshot permissions,
     String source = 'manual',
   }) async {
+    debugPrint('[SYNC] ── Starting $source sync ──');
+    debugPrint('[SYNC] Permissions: health=${permissions.health.name}  '
+        'location=${permissions.location.name}  '
+        'camera=${permissions.camera.name}  '
+        'mic=${permissions.microphone.name}');
+
     final now = DateTime.now().toUtc();
     final lastHealthSyncAt = await _storageService.readLastHealthSyncAt();
     final lastLocationSyncAt = await _storageService.readLastLocationSyncAt();
 
+    debugPrint('[SYNC] lastHealthSyncAt=$lastHealthSyncAt');
+    debugPrint('[SYNC] lastLocationSyncAt=$lastLocationSyncAt');
+    debugPrint('[SYNC] syncWindowEnd=$now');
+
     final payload = await _deviceDataService.collectSyncPayload(
       permissions: permissions,
-      healthFrom: lastHealthSyncAt,       // null → DeviceDataService uses 7-day floor
-      locationFrom: lastLocationSyncAt,   // null → DeviceDataService uses 1-day floor
+      healthFrom: lastHealthSyncAt,      // null → DeviceDataService uses 7-day floor
+      locationFrom: lastLocationSyncAt,  // null → DeviceDataService uses 1-day floor
       to: now,
     );
 
+    debugPrint('[SYNC] Collected payload:');
+    debugPrint('[SYNC]   steps=${payload.steps.length} records');
+    debugPrint('[SYNC]   heartRate=${payload.heartRate.length} records');
+    debugPrint('[SYNC]   calories=${payload.calories.length} records');
+    debugPrint('[SYNC]   sleep=${payload.sleep.length} records');
+    debugPrint('[SYNC]   weight=${payload.weight.length} records');
+    debugPrint('[SYNC]   locations=${payload.locations.length} records');
+    debugPrint('[SYNC]   isEmpty=${payload.isEmpty}');
+
     if (payload.isEmpty) {
+      debugPrint('[SYNC] Nothing to send — exiting early.');
       return SyncResult(
         success: true,
         syncedAt: now,
@@ -46,6 +68,7 @@ class SyncService {
       );
     }
 
+    debugPrint('[SYNC] Submitting to API (with retry)...');
     // Retry up to 3 times with exponential back-off (2 s, 4 s).
     await _submitWithRetry(session: session, payload: payload.toApiPayload());
 
@@ -56,11 +79,14 @@ class SyncService {
         payload.sleep.isNotEmpty ||
         payload.weight.isNotEmpty) {
       await _storageService.writeLastHealthSyncAt(now);
+      debugPrint('[SYNC] Updated lastHealthSyncAt=$now');
     }
     if (payload.locations.isNotEmpty) {
       await _storageService.writeLastLocationSyncAt(now);
+      debugPrint('[SYNC] Updated lastLocationSyncAt=$now');
     }
 
+    debugPrint('[SYNC] ✅ Sync complete — ${payload.totalRecordCount} records uploaded.');
     return SyncResult(
       success: true,
       syncedAt: now,
@@ -77,6 +103,7 @@ class SyncService {
   }) async {
     Object? lastError;
     for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+      debugPrint('[SYNC] API attempt $attempt/$maxAttempts...');
       try {
         await _apiService.submitHealthPayload(
           accessToken: session.accessToken,
@@ -84,11 +111,15 @@ class SyncService {
           payload: payload,
           deviceId: '${Platform.operatingSystem}-${session.userId}',
         );
+        debugPrint('[SYNC] API attempt $attempt succeeded.');
         return; // success — exit immediately
       } catch (error) {
         lastError = error;
+        debugPrint('[SYNC] API attempt $attempt FAILED: $error');
         if (attempt < maxAttempts) {
-          await Future<void>.delayed(Duration(seconds: 2 * attempt));
+          final delay = Duration(seconds: 2 * attempt);
+          debugPrint('[SYNC] Retrying in ${delay.inSeconds}s...');
+          await Future<void>.delayed(delay);
         }
       }
     }

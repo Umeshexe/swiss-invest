@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:health/health.dart';
 
@@ -38,27 +39,49 @@ class DeviceDataService {
     final yesterday = startOfToday.subtract(const Duration(days: 1));
     final lastWeek = reference.subtract(const Duration(days: 7));
 
-    final todayData = await _health.getHealthDataFromTypes(
-      startTime: startOfToday,
-      endTime: reference,
-      types: _snapshotTypesForPlatform,
-    );
-    final weekWeightData = await _health.getHealthDataFromTypes(
-      startTime: lastWeek,
-      endTime: reference,
-      types: const <HealthDataType>[HealthDataType.WEIGHT],
-    );
-    final sleepData = await _health.getHealthDataFromTypes(
-      startTime: yesterday,
-      endTime: reference,
-      types: _sleepTypesForPlatform,
-    );
+    debugPrint('[HEALTH SNAPSHOT] Querying snapshot types for platform=${Platform.operatingSystem}');
+    // Wrap every query — some types throw on certain platforms/versions.
+    List<HealthDataPoint> todayData = [];
+    List<HealthDataPoint> weekWeightData = [];
+    List<HealthDataPoint> sleepData = [];
+    try {
+      todayData = await _health.getHealthDataFromTypes(
+        startTime: startOfToday,
+        endTime: reference,
+        types: _snapshotTypesForPlatform,
+      );
+      debugPrint('[HEALTH SNAPSHOT] todayData: ${todayData.length} points');
+    } catch (e) {
+      debugPrint('[HEALTH SNAPSHOT] todayData query error: $e');
+    }
+    try {
+      weekWeightData = await _health.getHealthDataFromTypes(
+        startTime: lastWeek,
+        endTime: reference,
+        types: const <HealthDataType>[HealthDataType.WEIGHT],
+      );
+      debugPrint('[HEALTH SNAPSHOT] weekWeightData: ${weekWeightData.length} points');
+    } catch (e) {
+      debugPrint('[HEALTH SNAPSHOT] weekWeightData query error: $e');
+    }
+    try {
+      sleepData = await _health.getHealthDataFromTypes(
+        startTime: yesterday,
+        endTime: reference,
+        types: _sleepTypesForPlatform,
+      );
+      debugPrint('[HEALTH SNAPSHOT] sleepData: ${sleepData.length} points');
+    } catch (e) {
+      debugPrint('[HEALTH SNAPSHOT] sleepData query error: $e');
+    }
 
     int? steps = _sumIntegerValues(todayData, const <HealthDataType>[
       HealthDataType.STEPS,
     ]);
-    if (Platform.isAndroid && (steps == null || steps == 0)) {
+    // getTotalStepsInInterval gives the most accurate step count on all platforms.
+    if (steps == null || steps == 0) {
       steps = await _health.getTotalStepsInInterval(startOfToday, reference);
+      if (steps != null) debugPrint('[HEALTH SNAPSHOT] Steps from aggregate API: $steps');
     }
 
     final calories = _sumDoubleValues(todayData, const <HealthDataType>[
@@ -80,6 +103,8 @@ class DeviceDataService {
         heartRate != null ||
         weight != null;
 
+    debugPrint('[HEALTH SNAPSHOT] steps=$steps  calories=$calories  '  
+        'heartRate=$heartRate  weight=$weight  sleep=${sleepDuration?.inMinutes}min');
     return DeviceHealthSnapshot(
       steps: steps,
       calories: calories,
@@ -104,13 +129,17 @@ class DeviceDataService {
     // produces an almost-zero query window and returns 0 records.
     final healthSyncStart =
         (healthFrom != null && healthFrom.isBefore(sevenDaysAgo))
-            ? healthFrom.toUtc()
-            : sevenDaysAgo;
+        ? healthFrom.toUtc()
+        : sevenDaysAgo;
 
     final locationSyncStart =
         (locationFrom ?? now.subtract(const Duration(days: 1))).toUtc();
     final syncEnd = now;
-
+    debugPrint('[HEALTH DATA] ── collectSyncPayload ──');
+    debugPrint('[HEALTH DATA] healthFrom=$healthFrom  →  healthSyncStart=$healthSyncStart');
+    debugPrint('[HEALTH DATA] locationFrom=$locationFrom  →  locationSyncStart=$locationSyncStart');
+    debugPrint('[HEALTH DATA] syncEnd=$syncEnd');
+    debugPrint('[HEALTH DATA] platform=${Platform.operatingSystem}');
 
     final steps = <Map<String, dynamic>>[];
     final heartRate = <Map<String, dynamic>>[];
@@ -121,54 +150,137 @@ class DeviceDataService {
 
     if (permissions.health == PermissionState.granted) {
       await _health.configure();
-      final healthData = await _health.getHealthDataFromTypes(
-        startTime: healthSyncStart,
-        endTime: syncEnd,
-        types: _trackedHealthTypesForPlatform,
-      );
-
-      for (final record in healthData) {
-        final normalized = _normalizeHealthRecord(record);
-        switch (record.type) {
-          case HealthDataType.STEPS:
-            steps.add(normalized);
-          case HealthDataType.HEART_RATE:
-            heartRate.add(normalized);
-          case HealthDataType.ACTIVE_ENERGY_BURNED:
-          case HealthDataType.TOTAL_CALORIES_BURNED:
-            calories.add(normalized);
-          case HealthDataType.SLEEP_SESSION:
-          case HealthDataType.SLEEP_ASLEEP:
-          case HealthDataType.SLEEP_AWAKE:
-          case HealthDataType.SLEEP_AWAKE_IN_BED:
-          case HealthDataType.SLEEP_DEEP:
-          case HealthDataType.SLEEP_LIGHT:
-          case HealthDataType.SLEEP_OUT_OF_BED:
-          case HealthDataType.SLEEP_REM:
-          case HealthDataType.SLEEP_UNKNOWN:
-            sleep.add(normalized);
-          case HealthDataType.WEIGHT:
-            weight.add(normalized);
-          default:
-            break;
-        }
+      List<HealthDataPoint> healthData = [];
+      try {
+        healthData = await _health.getHealthDataFromTypes(
+          startTime: healthSyncStart,
+          endTime: syncEnd,
+          types: _trackedHealthTypesForPlatform,
+        );
+        debugPrint('[HEALTH DATA] raw health points fetched: ${healthData.length}');
+      } catch (e) {
+        debugPrint('[HEALTH DATA] getHealthDataFromTypes error: $e');
       }
 
-      if (Platform.isAndroid && steps.isEmpty) {
-        final totalSteps = await _health.getTotalStepsInInterval(
-          healthSyncStart,
-          syncEnd,
-        );
-        if (totalSteps != null && totalSteps > 0) {
-          steps.add(<String, dynamic>{
-            'value': totalSteps.toString(),
-            'unit': HealthDataUnit.COUNT.name,
-            'source_name': 'health_connect_aggregate',
-            'source_id': 'health_connect_aggregate',
+      // ── Steps: use getTotalStepsInInterval for the cleanest single value ──
+      final totalSteps = await _health.getTotalStepsInInterval(
+        healthSyncStart,
+        syncEnd,
+      );
+      // Fallback: sum individual segments if aggregate API returns null
+      int fallbackSteps = 0;
+      for (final r in healthData) {
+        if (r.type == HealthDataType.STEPS) {
+          fallbackSteps += _doubleValue(r).round();
+        }
+      }
+      final resolvedSteps = (totalSteps != null && totalSteps > 0)
+          ? totalSteps
+          : (fallbackSteps > 0 ? fallbackSteps : null);
+
+      debugPrint('[HEALTH DATA] totalSteps(API)=$totalSteps  fallbackSteps=$fallbackSteps  resolved=$resolvedSteps');
+      final healthSourceName = Platform.isAndroid ? 'health_connect' : 'apple_health';
+      if (resolvedSteps != null && resolvedSteps > 0) {
+        steps.add(<String, dynamic>{
+          'type': HealthDataType.STEPS.name,
+          'unit': HealthDataUnit.COUNT.name,
+          'value': resolvedSteps.toString(),
+          'start_time': healthSyncStart.toIso8601String(),
+          'end_time': syncEnd.toIso8601String(),
+          'platform': Platform.operatingSystem,
+          'source_name': healthSourceName,
+        });
+      }
+
+      // ── Calories: sum all active + total energy records ──
+      double totalCalories = 0;
+      for (final r in healthData) {
+        if (r.type == HealthDataType.ACTIVE_ENERGY_BURNED ||
+            r.type == HealthDataType.TOTAL_CALORIES_BURNED) {
+          totalCalories += _doubleValue(r);
+        }
+      }
+      debugPrint('[HEALTH DATA] totalCalories=$totalCalories');
+      if (totalCalories > 0) {
+        calories.add(<String, dynamic>{
+          'type': 'CALORIES',
+          'unit': HealthDataUnit.KILOCALORIE.name,
+          'value': totalCalories.toStringAsFixed(1),
+          'start_time': healthSyncStart.toIso8601String(),
+          'end_time': syncEnd.toIso8601String(),
+          'platform': Platform.operatingSystem,
+          'source_name': healthSourceName,
+        });
+      }
+
+      // ── Heart rate: send the most recent single reading ──
+      final hrPoints =
+          healthData.where((r) => r.type == HealthDataType.HEART_RATE).toList()
+            ..sort((a, b) => b.dateTo.compareTo(a.dateTo));
+      if (hrPoints.isNotEmpty) {
+        final latest = hrPoints.first;
+        heartRate.add(<String, dynamic>{
+          'type': HealthDataType.HEART_RATE.name,
+          'unit': HealthDataUnit.BEATS_PER_MINUTE.name,
+          'value': _doubleValue(latest).round().toString(),
+          'timestamp': latest.dateTo.toUtc().toIso8601String(),
+          'platform': Platform.operatingSystem,
+          'source_name': latest.sourceName,
+        });
+      }
+
+      // ── Weight: send only the most recent reading ──
+      final weightPoints =
+          healthData.where((r) => r.type == HealthDataType.WEIGHT).toList()
+            ..sort((a, b) => b.dateTo.compareTo(a.dateTo));
+      if (weightPoints.isNotEmpty) {
+        final latest = weightPoints.first;
+        weight.add(<String, dynamic>{
+          'type': HealthDataType.WEIGHT.name,
+          'unit': HealthDataUnit.KILOGRAM.name,
+          'value': _doubleValue(latest).toStringAsFixed(1),
+          'timestamp': latest.dateTo.toUtc().toIso8601String(),
+          'platform': Platform.operatingSystem,
+          'source_name': latest.sourceName,
+        });
+      }
+
+      // ── Sleep: send total duration from last sleep session ──
+      final sleepPoints =
+          healthData
+              .where((r) => _sleepTypesForPlatform.contains(r.type))
+              .toList()
+            ..sort((a, b) => b.dateTo.compareTo(a.dateTo));
+      if (sleepPoints.isNotEmpty) {
+        Duration totalSleep = Duration.zero;
+        DateTime? sleepStart;
+        DateTime? sleepEnd;
+        for (final r in sleepPoints) {
+          if (_countedSleepTypes.contains(r.type) ||
+              r.type == HealthDataType.SLEEP_SESSION) {
+            totalSleep += r.dateTo.difference(r.dateFrom);
+            if (sleepStart == null || r.dateFrom.isBefore(sleepStart)) {
+              sleepStart = r.dateFrom;
+            }
+            if (sleepEnd == null || r.dateTo.isAfter(sleepEnd)) {
+              sleepEnd = r.dateTo;
+            }
+          }
+        }
+        if (totalSleep.inMinutes > 0) {
+          final hours = totalSleep.inHours;
+          final mins = totalSleep.inMinutes % 60;
+          sleep.add(<String, dynamic>{
+            'type': 'SLEEP',
+            'unit': 'MINUTES',
+            'value': totalSleep.inMinutes.toString(),
+            'duration_formatted': '${hours}h ${mins}m',
+            'start_time': (sleepStart ?? syncEnd.subtract(totalSleep))
+                .toUtc()
+                .toIso8601String(),
+            'end_time': (sleepEnd ?? syncEnd).toUtc().toIso8601String(),
             'platform': Platform.operatingSystem,
-            'type': HealthDataType.STEPS.name,
-            'start_time': healthSyncStart.toIso8601String(),
-            'end_time': syncEnd.toIso8601String(),
+            'source_name': 'health_connect',
           });
         }
       }
@@ -194,40 +306,34 @@ class DeviceDataService {
   Future<Map<String, dynamic>?> _readLocation(
     DateTime locationSyncStart,
   ) async {
+    debugPrint('[LOCATION] Checking location service...');
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
+      debugPrint('[LOCATION] Location service is DISABLED.');
       return null;
     }
 
-    final position = await Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.medium,
-      ),
-    );
-
-    return <String, dynamic>{
-      'latitude': position.latitude,
-      'longitude': position.longitude,
-      'accuracy': position.accuracy,
-      'altitude': position.altitude,
-      'speed': position.speed,
-      'timestamp': position.timestamp.toUtc().toIso8601String(),
-      'window_start': locationSyncStart.toIso8601String(),
-      'platform': Platform.operatingSystem,
-    };
-  }
-
-  Map<String, dynamic> _normalizeHealthRecord(HealthDataPoint record) {
-    return <String, dynamic>{
-      'value': record.value.toString(),
-      'unit': record.unitString,
-      'source_name': record.sourceName,
-      'source_id': record.sourceId,
-      'platform': record.sourcePlatform.name,
-      'type': record.type.name,
-      'start_time': record.dateFrom.toUtc().toIso8601String(),
-      'end_time': record.dateTo.toUtc().toIso8601String(),
-    };
+    debugPrint('[LOCATION] Getting current position...');
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+        ),
+      );
+      debugPrint('[LOCATION] Got position: lat=${position.latitude}  lng=${position.longitude}  acc=${position.accuracy}m');
+      return <String, dynamic>{
+        'latitude': position.latitude,
+        'longitude': position.longitude,
+        'accuracy': position.accuracy,
+        'altitude': position.altitude,
+        'speed': position.speed,
+        'timestamp': position.timestamp.toUtc().toIso8601String(),
+        'platform': Platform.operatingSystem,
+      };
+    } catch (e) {
+      debugPrint('[LOCATION] Error getting position: $e');
+      return null;
+    }
   }
 
   int? _sumIntegerValues(
@@ -304,21 +410,35 @@ class DeviceDataService {
     return total == Duration.zero ? null : total;
   }
 
+  /// Safely extracts the numeric value from a HealthDataPoint.
+  /// Using .toString() on HealthValue returns the full object representation
+  /// e.g. "NumericHealthValue - numericValue: 854" which cannot be parsed.
   double _doubleValue(HealthDataPoint point) {
-    final parsed = double.tryParse(point.value.toString());
-    return parsed ?? 0;
+    final value = point.value;
+    if (value is NumericHealthValue) {
+      return value.numericValue.toDouble();
+    }
+    // Fallback: try to extract via regex from toString()
+    final raw = value.toString();
+    final match = RegExp(r'numericValue:\s*([\d.]+)').firstMatch(raw);
+    if (match != null) {
+      return double.tryParse(match.group(1) ?? '') ?? 0;
+    }
+    return double.tryParse(raw) ?? 0;
   }
 
   List<HealthDataType> get _trackedHealthTypesForPlatform => Platform.isAndroid
       ? _androidTrackedHealthTypes
       : _sharedTrackedHealthTypes;
 
+  // iOS (Apple Health) — SLEEP_SESSION is Android/Health Connect only.
+  // Use SLEEP_IN_BED which is the Apple Health equivalent.
   static const List<HealthDataType> _sharedTrackedHealthTypes =
       <HealthDataType>[
         HealthDataType.STEPS,
         HealthDataType.HEART_RATE,
         HealthDataType.ACTIVE_ENERGY_BURNED,
-        HealthDataType.SLEEP_SESSION,
+        HealthDataType.SLEEP_IN_BED,
         HealthDataType.WEIGHT,
       ];
 
@@ -345,7 +465,7 @@ class DeviceDataService {
 
   List<HealthDataType> get _sleepTypesForPlatform => Platform.isAndroid
       ? _androidSleepTypes
-      : const <HealthDataType>[HealthDataType.SLEEP_SESSION];
+      : const <HealthDataType>[HealthDataType.SLEEP_IN_BED];
 
   static const List<HealthDataType> _androidSnapshotTypes = <HealthDataType>[
     HealthDataType.STEPS,

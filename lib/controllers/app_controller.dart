@@ -63,6 +63,11 @@ class AppController extends ChangeNotifier {
         .readPermissionSetupComplete();
 
     if (session != null) {
+      debugPrint('[APP] Session loaded — userId=${session!.userId}');
+      debugPrint('[APP] ──────────────────────────────────────────');
+      debugPrint('[APP] ACCESS TOKEN (for Postman):');
+      debugPrint('[APP] ${session!.accessToken}');
+      debugPrint('[APP] ──────────────────────────────────────────');
       await BackgroundSyncService.schedulePeriodicSync();
       await refreshDeviceHealthSnapshot();
     }
@@ -121,27 +126,31 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> requestHealthPermission() async {
+  Future<PermissionState> requestHealthPermission() async {
     final result = await _permissionService.requestHealthPermission();
     if (result == PermissionState.granted) {
       permissionSnapshot = permissionSnapshot.copyWith(health: result);
     }
     await refreshPermissionSnapshot();
+    return permissionSnapshot.health;
   }
 
-  Future<void> requestLocationPermission() async {
+  Future<PermissionState> requestLocationPermission() async {
     await _permissionService.requestLocationPermission();
     await refreshPermissionSnapshot();
+    return permissionSnapshot.location;
   }
 
-  Future<void> requestCameraPermission() async {
+  Future<PermissionState> requestCameraPermission() async {
     await _permissionService.requestCameraPermission();
     await refreshPermissionSnapshot();
+    return permissionSnapshot.camera;
   }
 
-  Future<void> requestMicrophonePermission() async {
+  Future<PermissionState> requestMicrophonePermission() async {
     await _permissionService.requestMicrophonePermission();
     await refreshPermissionSnapshot();
+    return permissionSnapshot.microphone;
   }
 
   Future<void> completePermissionSetup() async {

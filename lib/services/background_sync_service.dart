@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:workmanager/workmanager.dart';
 
 import '../main.dart';
@@ -12,18 +15,39 @@ class BackgroundSyncService {
   static const String periodicSyncTask = 'orion.periodic-health-sync';
 
   static Future<void> initialize() async {
-    await Workmanager().initialize(callbackDispatcher, isInDebugMode: false);
+    try {
+      await Workmanager().initialize(
+        callbackDispatcher,
+        isInDebugMode: false,
+      );
+      debugPrint('[BG SYNC] Workmanager initialized on ${Platform.operatingSystem}.');
+    } catch (e) {
+      // Workmanager initialization can fail on iOS in certain configurations.
+      // This is non-fatal — manual sync still works.
+      debugPrint('[BG SYNC] Workmanager init failed (non-fatal): $e');
+    }
   }
 
   static Future<void> schedulePeriodicSync() async {
-    await Workmanager().registerPeriodicTask(
-      periodicSyncTask,
-      periodicSyncTask,
-      frequency: const Duration(hours: 24),
-      initialDelay: const Duration(minutes: 15),
-      existingWorkPolicy: ExistingWorkPolicy.keep,
-      constraints: Constraints(networkType: NetworkType.connected),
-    );
+    // Workmanager periodic tasks on iOS use BGTaskScheduler and behave
+    // differently from Android — minimum frequency is OS-controlled (~1h+).
+    if (!Platform.isAndroid) {
+      debugPrint('[BG SYNC] Skipping periodic task registration on iOS (BGTaskScheduler handles this).');
+      return;
+    }
+    try {
+      await Workmanager().registerPeriodicTask(
+        periodicSyncTask,
+        periodicSyncTask,
+        frequency: const Duration(hours: 24),
+        initialDelay: const Duration(minutes: 15),
+        existingWorkPolicy: ExistingWorkPolicy.keep,
+        constraints: Constraints(networkType: NetworkType.connected),
+      );
+      debugPrint('[BG SYNC] Periodic sync task registered.');
+    } catch (e) {
+      debugPrint('[BG SYNC] Failed to register periodic task: $e');
+    }
   }
 
   static Future<void> cancelPeriodicSync() async {

@@ -34,6 +34,8 @@
 	<string>The app uses HealthKit integration for connector features and permission-managed sync workflows.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Location is used to attach current GEO context when the user approves it.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Location is used to attach current GEO context when the user approves it.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Microphone access is only for user-triggered voice features and is never used in background sync.</string>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
