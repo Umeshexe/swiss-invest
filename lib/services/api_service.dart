@@ -22,7 +22,9 @@ class ApiService {
       body: jsonEncode(<String, String>{'email': email, 'password': password}),
     );
 
-    debugPrint('[API] LOGIN  status=${response.statusCode}  body=${response.body}');
+    debugPrint(
+      '[API] LOGIN  status=${response.statusCode}  body=${response.body}',
+    );
 
     final body = _decodeBody(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -44,11 +46,11 @@ class ApiService {
   ///
   /// The API expects:
   ///   POST /api/submissions
-  ///   Authorization: Bearer <token>
+  ///   Authorization: Bearer token
   ///   Content-Type: multipart/form-data
   ///   Fields:
   ///     type      → "Health Connector Data"
-  ///     device_id → "<platform>-<userId>"
+  ///     device_id -> platform-userId
   ///     payload   → JSON-encoded string of health data
   Future<Map<String, dynamic>> submitHealthPayload({
     required String accessToken,
@@ -79,7 +81,9 @@ class ApiService {
     final streamed = await request.send();
     final response = await http.Response.fromStream(streamed);
 
-    debugPrint('[API] SUBMIT  status=${response.statusCode}  body=${response.body}');
+    debugPrint(
+      '[API] SUBMIT  status=${response.statusCode}  body=${response.body}',
+    );
 
     final body = _decodeBody(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {

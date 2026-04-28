@@ -39,7 +39,9 @@ class DeviceDataService {
     final yesterday = startOfToday.subtract(const Duration(days: 1));
     final lastWeek = reference.subtract(const Duration(days: 7));
 
-    debugPrint('[HEALTH SNAPSHOT] Querying snapshot types for platform=${Platform.operatingSystem}');
+    debugPrint(
+      '[HEALTH SNAPSHOT] Querying snapshot types for platform=${Platform.operatingSystem}',
+    );
     // Wrap every query — some types throw on certain platforms/versions.
     List<HealthDataPoint> todayData = [];
     List<HealthDataPoint> weekWeightData = [];
@@ -54,13 +56,27 @@ class DeviceDataService {
     } catch (e) {
       debugPrint('[HEALTH SNAPSHOT] todayData query error: $e');
     }
+    if (Platform.isAndroid) {
+      final aggregateTodayData = await _readAndroidAggregateFallback(
+        startTime: startOfToday,
+        endTime: reference,
+        types: const <HealthDataType>[
+          HealthDataType.ACTIVE_ENERGY_BURNED,
+          HealthDataType.TOTAL_CALORIES_BURNED,
+        ],
+        label: 'snapshotToday',
+      );
+      todayData = _mergeAggregateFallbackPoints(todayData, aggregateTodayData);
+    }
     try {
       weekWeightData = await _health.getHealthDataFromTypes(
         startTime: lastWeek,
         endTime: reference,
         types: const <HealthDataType>[HealthDataType.WEIGHT],
       );
-      debugPrint('[HEALTH SNAPSHOT] weekWeightData: ${weekWeightData.length} points');
+      debugPrint(
+        '[HEALTH SNAPSHOT] weekWeightData: ${weekWeightData.length} points',
+      );
     } catch (e) {
       debugPrint('[HEALTH SNAPSHOT] weekWeightData query error: $e');
     }
@@ -74,6 +90,15 @@ class DeviceDataService {
     } catch (e) {
       debugPrint('[HEALTH SNAPSHOT] sleepData query error: $e');
     }
+    if (Platform.isAndroid) {
+      final aggregateSleepData = await _readAndroidAggregateFallback(
+        startTime: yesterday,
+        endTime: reference,
+        types: const <HealthDataType>[HealthDataType.SLEEP_ASLEEP],
+        label: 'snapshotSleep',
+      );
+      sleepData = _mergeAggregateFallbackPoints(sleepData, aggregateSleepData);
+    }
 
     int? steps = _sumIntegerValues(todayData, const <HealthDataType>[
       HealthDataType.STEPS,
@@ -81,7 +106,9 @@ class DeviceDataService {
     // getTotalStepsInInterval gives the most accurate step count on all platforms.
     if (steps == null || steps == 0) {
       steps = await _health.getTotalStepsInInterval(startOfToday, reference);
-      if (steps != null) debugPrint('[HEALTH SNAPSHOT] Steps from aggregate API: $steps');
+      if (steps != null) {
+        debugPrint('[HEALTH SNAPSHOT] Steps from aggregate API: $steps');
+      }
     }
 
     final calories = _sumDoubleValues(todayData, const <HealthDataType>[
@@ -103,8 +130,10 @@ class DeviceDataService {
         heartRate != null ||
         weight != null;
 
-    debugPrint('[HEALTH SNAPSHOT] steps=$steps  calories=$calories  '  
-        'heartRate=$heartRate  weight=$weight  sleep=${sleepDuration?.inMinutes}min');
+    debugPrint(
+      '[HEALTH SNAPSHOT] steps=$steps  calories=$calories  '
+      'heartRate=$heartRate  weight=$weight  sleep=${sleepDuration?.inMinutes}min',
+    );
     return DeviceHealthSnapshot(
       steps: steps,
       calories: calories,
@@ -136,8 +165,12 @@ class DeviceDataService {
         (locationFrom ?? now.subtract(const Duration(days: 1))).toUtc();
     final syncEnd = now;
     debugPrint('[HEALTH DATA] ── collectSyncPayload ──');
-    debugPrint('[HEALTH DATA] healthFrom=$healthFrom  →  healthSyncStart=$healthSyncStart');
-    debugPrint('[HEALTH DATA] locationFrom=$locationFrom  →  locationSyncStart=$locationSyncStart');
+    debugPrint(
+      '[HEALTH DATA] healthFrom=$healthFrom  →  healthSyncStart=$healthSyncStart',
+    );
+    debugPrint(
+      '[HEALTH DATA] locationFrom=$locationFrom  →  locationSyncStart=$locationSyncStart',
+    );
     debugPrint('[HEALTH DATA] syncEnd=$syncEnd');
     debugPrint('[HEALTH DATA] platform=${Platform.operatingSystem}');
 
@@ -157,9 +190,28 @@ class DeviceDataService {
           endTime: syncEnd,
           types: _trackedHealthTypesForPlatform,
         );
-        debugPrint('[HEALTH DATA] raw health points fetched: ${healthData.length}');
+        debugPrint(
+          '[HEALTH DATA] raw health points fetched: ${healthData.length}',
+        );
       } catch (e) {
         debugPrint('[HEALTH DATA] getHealthDataFromTypes error: $e');
+      }
+      if (Platform.isAndroid) {
+        final aggregateHealthData = await _readAndroidAggregateFallback(
+          startTime: healthSyncStart,
+          endTime: syncEnd,
+          types: const <HealthDataType>[
+            HealthDataType.ACTIVE_ENERGY_BURNED,
+            HealthDataType.TOTAL_CALORIES_BURNED,
+            HealthDataType.SLEEP_ASLEEP,
+            HealthDataType.WEIGHT,
+          ],
+          label: 'syncHealth',
+        );
+        healthData = _mergeAggregateFallbackPoints(
+          healthData,
+          aggregateHealthData,
+        );
       }
 
       // ── Steps: use getTotalStepsInInterval for the cleanest single value ──
@@ -178,8 +230,12 @@ class DeviceDataService {
           ? totalSteps
           : (fallbackSteps > 0 ? fallbackSteps : null);
 
-      debugPrint('[HEALTH DATA] totalSteps(API)=$totalSteps  fallbackSteps=$fallbackSteps  resolved=$resolvedSteps');
-      final healthSourceName = Platform.isAndroid ? 'health_connect' : 'apple_health';
+      debugPrint(
+        '[HEALTH DATA] totalSteps(API)=$totalSteps  fallbackSteps=$fallbackSteps  resolved=$resolvedSteps',
+      );
+      final healthSourceName = Platform.isAndroid
+          ? 'health_connect'
+          : 'apple_health';
       if (resolvedSteps != null && resolvedSteps > 0) {
         steps.add(<String, dynamic>{
           'type': HealthDataType.STEPS.name,
@@ -320,7 +376,9 @@ class DeviceDataService {
           accuracy: LocationAccuracy.medium,
         ),
       );
-      debugPrint('[LOCATION] Got position: lat=${position.latitude}  lng=${position.longitude}  acc=${position.accuracy}m');
+      debugPrint(
+        '[LOCATION] Got position: lat=${position.latitude}  lng=${position.longitude}  acc=${position.accuracy}m',
+      );
       return <String, dynamic>{
         'latitude': position.latitude,
         'longitude': position.longitude,
@@ -427,6 +485,48 @@ class DeviceDataService {
     return double.tryParse(raw) ?? 0;
   }
 
+  Future<List<HealthDataPoint>> _readAndroidAggregateFallback({
+    required DateTime startTime,
+    required DateTime endTime,
+    required List<HealthDataType> types,
+    required String label,
+  }) async {
+    if (!Platform.isAndroid) {
+      return const <HealthDataPoint>[];
+    }
+
+    try {
+      final points = await _health.getHealthAggregateDataFromTypes(
+        types: types,
+        startDate: startTime,
+        endDate: endTime,
+      );
+      debugPrint('[HEALTH AGG] $label: ${points.length} aggregate points');
+      return points;
+    } catch (e) {
+      debugPrint('[HEALTH AGG] $label error: $e');
+      return const <HealthDataPoint>[];
+    }
+  }
+
+  List<HealthDataPoint> _mergeAggregateFallbackPoints(
+    List<HealthDataPoint> primary,
+    List<HealthDataPoint> aggregateFallback,
+  ) {
+    if (aggregateFallback.isEmpty) {
+      return primary;
+    }
+
+    final merged = List<HealthDataPoint>.from(primary);
+    final existingTypes = merged.map((point) => point.type).toSet();
+    for (final point in aggregateFallback) {
+      if (!existingTypes.contains(point.type)) {
+        merged.add(point);
+      }
+    }
+    return merged;
+  }
+
   List<HealthDataType> get _trackedHealthTypesForPlatform => Platform.isAndroid
       ? _androidTrackedHealthTypes
       : _sharedTrackedHealthTypes;
@@ -444,7 +544,6 @@ class DeviceDataService {
 
   static const List<HealthDataType> _androidTrackedHealthTypes =
       <HealthDataType>[
-        HealthDataType.STEPS,
         HealthDataType.HEART_RATE,
         HealthDataType.ACTIVE_ENERGY_BURNED,
         HealthDataType.TOTAL_CALORIES_BURNED,
@@ -468,7 +567,6 @@ class DeviceDataService {
       : const <HealthDataType>[HealthDataType.SLEEP_IN_BED];
 
   static const List<HealthDataType> _androidSnapshotTypes = <HealthDataType>[
-    HealthDataType.STEPS,
     HealthDataType.HEART_RATE,
     HealthDataType.ACTIVE_ENERGY_BURNED,
     HealthDataType.TOTAL_CALORIES_BURNED,
