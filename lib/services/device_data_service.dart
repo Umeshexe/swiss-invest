@@ -56,18 +56,6 @@ class DeviceDataService {
     } catch (e) {
       debugPrint('[HEALTH SNAPSHOT] todayData query error: $e');
     }
-    if (Platform.isAndroid) {
-      final aggregateTodayData = await _readAndroidAggregateFallback(
-        startTime: startOfToday,
-        endTime: reference,
-        types: const <HealthDataType>[
-          HealthDataType.ACTIVE_ENERGY_BURNED,
-          HealthDataType.TOTAL_CALORIES_BURNED,
-        ],
-        label: 'snapshotToday',
-      );
-      todayData = _mergeAggregateFallbackPoints(todayData, aggregateTodayData);
-    }
     try {
       weekWeightData = await _health.getHealthDataFromTypes(
         startTime: lastWeek,
@@ -89,15 +77,6 @@ class DeviceDataService {
       debugPrint('[HEALTH SNAPSHOT] sleepData: ${sleepData.length} points');
     } catch (e) {
       debugPrint('[HEALTH SNAPSHOT] sleepData query error: $e');
-    }
-    if (Platform.isAndroid) {
-      final aggregateSleepData = await _readAndroidAggregateFallback(
-        startTime: yesterday,
-        endTime: reference,
-        types: const <HealthDataType>[HealthDataType.SLEEP_ASLEEP],
-        label: 'snapshotSleep',
-      );
-      sleepData = _mergeAggregateFallbackPoints(sleepData, aggregateSleepData);
     }
 
     int? steps = _sumIntegerValues(todayData, const <HealthDataType>[
@@ -195,23 +174,6 @@ class DeviceDataService {
         );
       } catch (e) {
         debugPrint('[HEALTH DATA] getHealthDataFromTypes error: $e');
-      }
-      if (Platform.isAndroid) {
-        final aggregateHealthData = await _readAndroidAggregateFallback(
-          startTime: healthSyncStart,
-          endTime: syncEnd,
-          types: const <HealthDataType>[
-            HealthDataType.ACTIVE_ENERGY_BURNED,
-            HealthDataType.TOTAL_CALORIES_BURNED,
-            HealthDataType.SLEEP_ASLEEP,
-            HealthDataType.WEIGHT,
-          ],
-          label: 'syncHealth',
-        );
-        healthData = _mergeAggregateFallbackPoints(
-          healthData,
-          aggregateHealthData,
-        );
       }
 
       // ── Steps: use getTotalStepsInInterval for the cleanest single value ──
@@ -483,48 +445,6 @@ class DeviceDataService {
       return double.tryParse(match.group(1) ?? '') ?? 0;
     }
     return double.tryParse(raw) ?? 0;
-  }
-
-  Future<List<HealthDataPoint>> _readAndroidAggregateFallback({
-    required DateTime startTime,
-    required DateTime endTime,
-    required List<HealthDataType> types,
-    required String label,
-  }) async {
-    if (!Platform.isAndroid) {
-      return const <HealthDataPoint>[];
-    }
-
-    try {
-      final points = await _health.getHealthAggregateDataFromTypes(
-        types: types,
-        startDate: startTime,
-        endDate: endTime,
-      );
-      debugPrint('[HEALTH AGG] $label: ${points.length} aggregate points');
-      return points;
-    } catch (e) {
-      debugPrint('[HEALTH AGG] $label error: $e');
-      return const <HealthDataPoint>[];
-    }
-  }
-
-  List<HealthDataPoint> _mergeAggregateFallbackPoints(
-    List<HealthDataPoint> primary,
-    List<HealthDataPoint> aggregateFallback,
-  ) {
-    if (aggregateFallback.isEmpty) {
-      return primary;
-    }
-
-    final merged = List<HealthDataPoint>.from(primary);
-    final existingTypes = merged.map((point) => point.type).toSet();
-    for (final point in aggregateFallback) {
-      if (!existingTypes.contains(point.type)) {
-        merged.add(point);
-      }
-    }
-    return merged;
   }
 
   List<HealthDataType> get _trackedHealthTypesForPlatform => Platform.isAndroid
