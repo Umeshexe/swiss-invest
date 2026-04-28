@@ -25,13 +25,18 @@ class SyncPayload {
 
   bool get isEmpty => totalRecordCount == 0;
 
+  String _getVal(List<Map<String, dynamic>> list) {
+    if (list.isEmpty) return '0';
+    return list.first['value']?.toString() ?? '1';
+  }
+
   String get summary =>
-      'steps: ${steps.length}, '
-      'heart_rate: ${heartRate.length}, '
-      'calories: ${calories.length}, '
-      'sleep: ${sleep.length}, '
-      'weight: ${weight.length}, '
-      'location: ${locations.length}';
+      'steps: ${_getVal(steps)}, '
+      'heart_rate: ${_getVal(heartRate)}, '
+      'calories: ${_getVal(calories)}, '
+      'sleep_mins: ${_getVal(sleep)}, '
+      'weight: ${_getVal(weight)}, '
+      'location_points: ${locations.length}';
 
   Map<String, dynamic> toApiPayload() => <String, dynamic>{
     'steps': steps,
