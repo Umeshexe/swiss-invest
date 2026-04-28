@@ -227,6 +227,14 @@ class AppController extends ChangeNotifier {
     permissionSnapshot = snapshot;
     await _storageService.writePermissionSnapshot(snapshot);
 
+    // If we just synced very recently, show 0 pending to avoid UI confusion
+    final lastSync = await _storageService.readLastHealthSyncAt();
+    if (lastSync != null && DateTime.now().difference(lastSync).inMinutes < 5) {
+      _cachedPendingRecords = 0;
+      _pendingEstimateAt = DateTime.now();
+      return 0;
+    }
+
     final payload = await _deviceDataService.collectSyncPayload(
       permissions: snapshot,
       healthFrom: snapshot.health == PermissionState.granted
