@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -315,8 +317,10 @@ class _HealthSnapshotPanel extends StatelessWidget {
           borderRadius: BorderRadius.circular(22),
           border: Border.all(color: const Color(0xFFD8E0D6)),
         ),
-        child: const Text(
-          'No health values are visible yet from the current native source. If the device has data, check that it is available through Health Connect on Android or Apple Health on iPhone, then refresh.',
+        child: Text(
+          Platform.isAndroid
+              ? 'No health values are visible yet from Health Connect. On some Android devices, Health Connect can be installed and permission can be granted, but there is still no data until a source app or wearable syncs steps/calories into Health Connect. If this phone already has health data, make sure it is actually writing into Health Connect, then refresh.'
+              : 'No health values are visible yet from Apple Health. If the device has data, check that it is available in Apple Health and that access has been granted, then refresh.',
         ),
       );
     }

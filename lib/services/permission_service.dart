@@ -31,9 +31,19 @@ class PermissionService {
     await _health.configure();
     if (Platform.isAndroid) {
       await Permission.activityRecognition.request();
+      final isAvailable = await _health.isHealthConnectAvailable();
+      if (!isAvailable) {
+        debugPrint(
+          '[PERMISSIONS] Health Connect is not available. Redirecting to install flow.',
+        );
+        await _health.installHealthConnect();
+        return PermissionState.unavailable;
+      }
     }
     final healthTypes = _healthTypesForCurrentPlatform;
-    debugPrint('[PERMISSIONS] Requesting health for platform=${Platform.operatingSystem}  types=${healthTypes.map((t) => t.name).join(", ")}');
+    debugPrint(
+      '[PERMISSIONS] Requesting health for platform=${Platform.operatingSystem}  types=${healthTypes.map((t) => t.name).join(", ")}',
+    );
     try {
       final granted = await _health.requestAuthorization(
         healthTypes,
@@ -42,7 +52,9 @@ class PermissionService {
           HealthDataAccess.READ,
         ),
       );
-      debugPrint('[PERMISSIONS] Health result: ${granted ? "granted" : "denied"}');
+      debugPrint(
+        '[PERMISSIONS] Health result: ${granted ? "granted" : "denied"}',
+      );
       return granted ? PermissionState.granted : PermissionState.denied;
     } catch (e) {
       debugPrint('[PERMISSIONS] Health request error: $e');
@@ -81,7 +93,13 @@ class PermissionService {
           HealthDataAccess.READ,
         ),
       );
-      return granted == true ? PermissionState.granted : fallback;
+      if (granted == true) {
+        return PermissionState.granted;
+      }
+      if (granted == false) {
+        return PermissionState.denied;
+      }
+      return fallback;
     } catch (_) {
       return PermissionState.unavailable;
     }

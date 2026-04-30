@@ -84,11 +84,20 @@ class DeviceDataService {
     ]);
     // getTotalStepsInInterval gives the most accurate step count on all platforms.
     if (steps == null || steps == 0) {
-      steps = await _health.getTotalStepsInInterval(startOfToday, reference);
+      steps = await _health.getTotalStepsInInterval(
+        startOfToday,
+        reference,
+        includeManualEntry: false,
+      );
       if (steps != null) {
         debugPrint('[HEALTH SNAPSHOT] Steps from aggregate API: $steps');
       }
     }
+
+    // Determine the step data source for UI display.
+    var snapshotStepSource = Platform.isAndroid
+        ? StepDataSource.healthConnect
+        : StepDataSource.appleHealth;
 
     final calories = _sumDoubleValues(todayData, const <HealthDataType>[
       HealthDataType.ACTIVE_ENERGY_BURNED,
@@ -111,7 +120,7 @@ class DeviceDataService {
 
     debugPrint(
       '[HEALTH SNAPSHOT] steps=$steps  calories=$calories  '
-      'heartRate=$heartRate  weight=$weight  sleep=${sleepDuration?.inMinutes}min',
+      'heartRate=$heartRate  weight=$weight  sleep=${sleepDuration?.inMinutes}min  source=${snapshotStepSource.name}',
     );
     return DeviceHealthSnapshot(
       steps: steps,
@@ -120,6 +129,7 @@ class DeviceDataService {
       heartRate: heartRate,
       weight: weight,
       hasAnyData: hasAnyData,
+      stepSource: snapshotStepSource,
     );
   }
 
@@ -131,14 +141,12 @@ class DeviceDataService {
   }) async {
     final now = to.toUtc();
     final sevenDaysAgo = now.subtract(const Duration(days: 7));
+    final startOfToday = DateTime.utc(now.year, now.month, now.day);
 
     // Always look back at least 7 days for health data.
     // This prevents a race where a recent (few-minutes-old) lastHealthSyncAt
     // produces an almost-zero query window and returns 0 records.
-    final healthSyncStart =
-        (healthFrom != null && healthFrom.isBefore(sevenDaysAgo))
-        ? healthFrom.toUtc()
-        : sevenDaysAgo;
+    final healthSyncStart = (healthFrom ?? sevenDaysAgo).toUtc();
 
     final locationSyncStart =
         (locationFrom ?? now.subtract(const Duration(days: 1))).toUtc();
@@ -175,46 +183,60 @@ class DeviceDataService {
       } catch (e) {
         debugPrint('[HEALTH DATA] getHealthDataFromTypes error: $e');
       }
+      final metricWindowStart = healthSyncStart.isAfter(startOfToday)
+          ? healthSyncStart
+          : startOfToday;
 
-      // ── Steps: use getTotalStepsInInterval for the cleanest single value ──
+      // Keep synced step values aligned with the "today" snapshot shown in UI.
       final totalSteps = await _health.getTotalStepsInInterval(
-        healthSyncStart,
+        metricWindowStart,
         syncEnd,
+        includeManualEntry: false,
       );
-      // Fallback: sum individual segments if aggregate API returns null
+      // Fallback: sum only trusted step points within the same "today" window.
       int fallbackSteps = 0;
       for (final r in healthData) {
-        if (r.type == HealthDataType.STEPS) {
+        if (r.type == HealthDataType.STEPS &&
+            _isTrustedStepPoint(r) &&
+            !r.dateTo.isBefore(metricWindowStart)) {
           fallbackSteps += _doubleValue(r).round();
         }
       }
-      final resolvedSteps = (totalSteps != null && totalSteps > 0)
+      int? resolvedSteps = (totalSteps != null && totalSteps > 0)
           ? totalSteps
           : (fallbackSteps > 0 ? fallbackSteps : null);
 
+      String stepSourceName =
+          Platform.isAndroid ? 'health_connect' : 'apple_health';
+      DateTime stepRecordStart = metricWindowStart;
+      DateTime stepRecordEnd = syncEnd;
+
       debugPrint(
-        '[HEALTH DATA] totalSteps(API)=$totalSteps  fallbackSteps=$fallbackSteps  resolved=$resolvedSteps',
+        '[HEALTH DATA] totalSteps(API)=$totalSteps  fallbackSteps=$fallbackSteps  resolved=$resolvedSteps  source=$stepSourceName',
       );
-      final healthSourceName = Platform.isAndroid
-          ? 'health_connect'
-          : 'apple_health';
       if (resolvedSteps != null && resolvedSteps > 0) {
         steps.add(<String, dynamic>{
           'type': HealthDataType.STEPS.name,
           'unit': HealthDataUnit.COUNT.name,
           'value': resolvedSteps.toString(),
-          'start_time': healthSyncStart.toIso8601String(),
-          'end_time': syncEnd.toIso8601String(),
+          'start_time': stepRecordStart.toIso8601String(),
+          'end_time': stepRecordEnd.toIso8601String(),
           'platform': Platform.operatingSystem,
-          'source_name': healthSourceName,
+          'source_name': stepSourceName,
         });
       }
+
+      // Source label for all Health Connect records (calories, HR, weight).
+      // This is always the platform health API, regardless of what source steps used.
+      final healthSourceName =
+          Platform.isAndroid ? 'health_connect' : 'apple_health';
 
       // ── Calories: sum all active + total energy records ──
       double totalCalories = 0;
       for (final r in healthData) {
-        if (r.type == HealthDataType.ACTIVE_ENERGY_BURNED ||
-            r.type == HealthDataType.TOTAL_CALORIES_BURNED) {
+        if (!r.dateTo.isBefore(metricWindowStart) &&
+            (r.type == HealthDataType.ACTIVE_ENERGY_BURNED ||
+                r.type == HealthDataType.TOTAL_CALORIES_BURNED)) {
           totalCalories += _doubleValue(r);
         }
       }
@@ -224,7 +246,7 @@ class DeviceDataService {
           'type': 'CALORIES',
           'unit': HealthDataUnit.KILOCALORIE.name,
           'value': totalCalories.toStringAsFixed(1),
-          'start_time': healthSyncStart.toIso8601String(),
+          'start_time': metricWindowStart.toIso8601String(),
           'end_time': syncEnd.toIso8601String(),
           'platform': Platform.operatingSystem,
           'source_name': healthSourceName,
@@ -243,7 +265,7 @@ class DeviceDataService {
           'value': _doubleValue(latest).round().toString(),
           'timestamp': latest.dateTo.toUtc().toIso8601String(),
           'platform': Platform.operatingSystem,
-          'source_name': latest.sourceName,
+          'source_name': healthSourceName,
         });
       }
 
@@ -259,7 +281,7 @@ class DeviceDataService {
           'value': _doubleValue(latest).toStringAsFixed(1),
           'timestamp': latest.dateTo.toUtc().toIso8601String(),
           'platform': Platform.operatingSystem,
-          'source_name': latest.sourceName,
+          'source_name': healthSourceName,
         });
       }
 
@@ -298,7 +320,7 @@ class DeviceDataService {
                 .toIso8601String(),
             'end_time': (sleepEnd ?? syncEnd).toUtc().toIso8601String(),
             'platform': Platform.operatingSystem,
-            'source_name': 'health_connect',
+            'source_name': healthSourceName,
           });
         }
       }
@@ -447,6 +469,14 @@ class DeviceDataService {
     return double.tryParse(raw) ?? 0;
   }
 
+  bool _isTrustedStepPoint(HealthDataPoint point) {
+    if (point.type != HealthDataType.STEPS) {
+      return false;
+    }
+    return point.recordingMethod == RecordingMethod.automatic ||
+        point.recordingMethod == RecordingMethod.active;
+  }
+
   List<HealthDataType> get _trackedHealthTypesForPlatform => Platform.isAndroid
       ? _androidTrackedHealthTypes
       : _sharedTrackedHealthTypes;
@@ -464,6 +494,7 @@ class DeviceDataService {
 
   static const List<HealthDataType> _androidTrackedHealthTypes =
       <HealthDataType>[
+        HealthDataType.STEPS,
         HealthDataType.HEART_RATE,
         HealthDataType.ACTIVE_ENERGY_BURNED,
         HealthDataType.TOTAL_CALORIES_BURNED,
